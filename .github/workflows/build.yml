@@ -1,0 +1,51 @@
+name: Build Moul Al Hanout
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extract project
+        run: |
+          unzip -o Moul_Al_Hanout.zip -d project
+
+      - name: Find Gradle project
+        run: |
+          echo "Searching for Gradle project..."
+          find project -name gradlew -type f
+
+      - name: Build APK and AAB
+        run: |
+          GRADLEW=$(find project -name gradlew -type f | head -n 1)
+          chmod +x "$GRADLEW"
+          cd "$(dirname "$GRADLEW")"
+          ./gradlew assembleDebug bundleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Moul-Al-Hanout-APK
+          path: |
+            project/**/build/outputs/apk/debug/*.apk
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Moul-Al-Hanout-AAB
+          path: |
+            project/**/build/outputs/bundle/release/*.aab
