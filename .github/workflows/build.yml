@@ -1,4 +1,4 @@
-name: بناء مول الحانوت
+name: Build Moul Al Hanout
 
 on:
   workflow_dispatch:
@@ -8,10 +8,11 @@ on:
 
 jobs:
   build:
+    name: Build APK and AAB
     runs-on: ubuntu-latest
 
     steps:
-      - name: استخراج المشروع
+      - name: تحميل المشروع
         uses: actions/checkout@v4
 
       - name: تثبيت JDK 17
@@ -20,45 +21,84 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: استخراج ملف المشروع
+      - name: إعداد Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: تثبيت Android SDK 35
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: فك ضغط مشروع مول الحانوت
         run: |
           mkdir -p project
           unzip -o Moul_Al_Hanout.zip -d project
 
-      - name: البحث عن مشروع Android
+      - name: العثور على مشروع Android
+        id: find_project
+        shell: bash
         run: |
-          SETTINGS=$(find project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
-          if [ -z "$SETTINGS" ]; then
-            echo "لم يتم العثور على مشروع Android"
-            find project -maxdepth 3 -type f | head -100
+          PROJECT_DIR=$(find "$GITHUB_WORKSPACE/project" -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "لم يتم العثور على مشروع Android داخل Moul_Al_Hanout.zip"
+            echo "محتويات المشروع:"
+            find "$GITHUB_WORKSPACE/project" -maxdepth 4 -type f | head -200
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "تم العثور على المشروع في: $PROJECT_DIR"
 
-      - name: تثبيت Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
+      - name: إعداد Gradle Wrapper
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
 
-      - name: بناء APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle assembleDebug --stacktrace
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          else
+            echo "Gradle Wrapper غير موجود، سيتم إنشاؤه..."
+            gradle wrapper --gradle-version 8.9
+            chmod +x ./gradlew
+          fi
 
-      - name: بناء AAB
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle bundleRelease --stacktrace
+      - name: بناء APK و AAB
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+          ./gradlew clean assembleRelease bundleRelease --stacktrace
 
-      - name: رفع APK
+      - name: البحث عن الملفات الناتجة
+        shell: bash
+        run: |
+          echo "===== APK ====="
+          find "$PROJECT_DIR" -type f -name "*.apk" -print
+
+          echo "===== AAB ====="
+          find "$PROJECT_DIR" -type f -name "*.aab" -print
+
+      - name: تحميل APK
         uses: actions/upload-artifact@v4
         with:
           name: Moul-Al-Hanout-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: |
+            **/build/outputs/apk/**/*.apk
+          if-no-files-found: error
 
-      - name: رفع AAB
+      - name: تحميل AAB
         uses: actions/upload-artifact@v4
         with:
           name: Moul-Al-Hanout-AAB
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/bundle/release/*.aab
+          path: |
+            **/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
+
+      - name: إنهاء البناء
+        run: |
+          echo "======================================"
+          echo "تم الانتهاء من بناء مول الحانوت"
+          echo "APK و AAB موجودين في Artifacts"
+          echo "======================================"
